@@ -1,0 +1,166 @@
+# KEY DIFFERENCE: CI configuration
+#
+# TypeScript original (.github/workflows/playwright.yml) used:
+#   - npm ci                    → here: pip install -e ".[dev]"
+#   - npx playwright install    → here: playwright install --with-deps chromium firefox
+#   - npx cucumber-js ...       → here: pytest tests/ -m ...
+#   - Node.js cache (node_modules) → here: pip cache via actions/cache
+#
+# Structure is identical: lint → (ui-matrix + api) fan-out, same 3 jobs.
+# Matrix: chromium + firefox — same browsers as the TypeScript CI.
+#
+# KEY DIFFERENCE: environment variable for browser selection.
+# TypeScript Playwright reads 'projects: [{name: "chromium"}, {name: "firefox"}]'
+# from playwright.config.ts. Python reads BROWSER env var, handled in conftest.py:
+#   browser_name = os.environ.get("BROWSER", "chromium")
+#   browser      = await getattr(playwright_instance, browser_name).launch()
+# 'getattr(playwright, "chromium")' replaces TypeScript's switch/case on browser name.
+
+name: BDD POM — CI
+
+on:
+  push:
+    branches: [feature/bdd-pom]
+  pull_request:
+    branches: [feature/bdd-pom, main]
+
+jobs:
+  # ─── JOB 1: lint ──────────────────────────────────────────────────────────
+  # KEY DIFFERENCE: TypeScript ran eslint + tsc --noEmit as two separate commands.
+  # Python runs ruff check (lint) + ruff format --check (format) + mypy (types)
+  # all from a single tool ecosystem. Equivalent coverage, less config drift.
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          # KEY DIFFERENCE: pip cache replaces npm's node_modules cache.
+          # Both cache the dependency install to speed up subsequent runs.
+          cache: pip
+
+      - name: Install dependencies
+        # KEY DIFFERENCE: 'pip install -e ".[dev]"' installs the package in editable
+        # mode plus all dev extras. TypeScript used 'npm ci' (deterministic install).
+        # The -e flag means 'from tests.pages.x import X' works without sys.path hacks.
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint (ruff check)
+        # KEY DIFFERENCE: 'ruff check' replaces ESLint.
+        # ESLint: npx eslint . --ext .ts
+        # Python: ruff check . (reads rules from [tool.ruff.lint] in pyproject.toml)
+        run: python -m ruff check .
+
+      - name: Format check (ruff format)
+        # KEY DIFFERENCE: 'ruff format --check' replaces Prettier's --check flag.
+        # Prettier: npx prettier --check "**/*.ts"
+        # Python: ruff format --check . (same tool as linter — no config split)
+        run: python -m ruff format --check .
+
+      - name: Type-check (mypy)
+        # KEY DIFFERENCE: 'mypy tests' replaces 'tsc --noEmit'.
+        # TypeScript: npx tsc --noEmit (reads tsconfig.json)
+        # Python: mypy tests (reads [tool.mypy] from pyproject.toml)
+        # Both enforce strict mode. mypy excludes conftest/steps/test_ files because
+        # @pytest.fixture has no complete ParamSpec stubs in typeshed (known limitation).
+        run: python -m mypy tests
+
+  # ─── JOB 2: ui-tests ──────────────────────────────────────────────────────
+  # KEY DIFFERENCE: browser matrix.
+  # TypeScript playwright.config.ts declared projects: [{name: "chromium"}, {name: "firefox"}].
+  # Python uses a GitHub Actions matrix + BROWSER env var that conftest.py reads.
+  # Both result in two parallel jobs: one for chromium, one for firefox.
+  ui-tests:
+    name: UI tests (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    needs: lint
+
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Install Playwright browsers
+        # KEY DIFFERENCE: 'playwright install' replaces 'npx playwright install'.
+        # --with-deps installs OS-level dependencies (libnss3, etc.) — same as
+        # the TypeScript workflow's 'npx playwright install --with-deps'.
+        # Only installs the browser needed for this matrix job to save time.
+        run: python -m playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run UI tests
+        # KEY DIFFERENCE: BROWSER env var → conftest.py reads it via os.environ.get("BROWSER", "chromium")
+        # TypeScript reads the 'name' property from playwright.config.ts projects array.
+        # PYTHONPATH ensures 'from tests.pages.x import X' resolves from the project root.
+        env:
+          BROWSER: ${{ matrix.browser }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest tests/ -m "not api" -v --html=reports/ui-${{ matrix.browser }}.html --self-contained-html
+
+      - name: Upload HTML report
+        # KEY DIFFERENCE: pytest-html generates the report; TypeScript used cucumber's --format html.
+        # Both upload to GitHub Actions artifacts for post-run inspection.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-report-${{ matrix.browser }}
+          path: reports/ui-${{ matrix.browser }}.html
+          retention-days: 7
+
+  # ─── JOB 3: api-tests ─────────────────────────────────────────────────────
+  # KEY DIFFERENCE: API tests run without a browser — no Playwright browser install needed.
+  # TypeScript Cucumber had no built-in way to skip browser launch for API-only tests.
+  # Python uses pytest markers: @pytest.mark.api and 'pytest -m api' selects only those tests.
+  # This saves ~30s of browser binary download in CI for API-only runs.
+  api-tests:
+    name: API tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Install Playwright (no browser)
+        # KEY DIFFERENCE: API tests use playwright.async_api.APIRequestContext,
+        # which requires the Playwright Python package but NOT a browser binary.
+        # TypeScript ran all tests through the browser even for API calls.
+        # We skip '--with-deps' and browser name to avoid downloading binaries.
+        run: python -m playwright install
+
+      - name: Run API tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest tests/ -m api -v --html=reports/api.html --self-contained-html
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-report
+          path: reports/api.html
+          retention-days: 7
