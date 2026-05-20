@@ -18,10 +18,10 @@ dev = [
     "playwright>=1.44.0",
     # Test runner — replaces Cucumber.js as the execution engine
     "pytest>=8.0.0",
-    # Async test support — required because playwright-python uses asyncio
-    "pytest-asyncio>=0.23.0",
-    # BDD/Gherkin layer — replaces @cucumber/cucumber (branch feature/bdd-pom only)
-    "pytest-bdd>=7.0.0",
+    # Async test support — required for async def test_* functions.
+    # KEY DIFFERENCE: pinned to <1.0 — pytest-asyncio 1.x changed the default mode
+    # and broke async fixture injection in some configurations.
+    "pytest-asyncio>=0.23.0,<1.0",
     # Test data generation — replaces @faker-js/faker
     "Faker>=25.0.0",
     # Linter + formatter — replaces ESLint AND Prettier in a single Rust binary
@@ -87,7 +87,7 @@ strict = true
 ignore_missing_imports = true  # third-party stubs not always available
 # Exclude step definitions — pytest-bdd uses dynamic fixture injection that
 # confuses mypy's strict mode (parameters appear "unused" to static analysis)
-exclude = ["tests/steps/", "tests/test_"]
+exclude = ["tests/conftest", "tests/test_"]
 
 [[tool.mypy.overrides]]
 # Page objects and support code: full strict checking
@@ -110,6 +110,9 @@ markers = [
 ]
 # Test discovery — equivalent to testDir in playwright.config.ts
 testpaths = ["tests"]
+# KEY DIFFERENCE: PYTHONPATH — 'from tests.pages.X import X' requires the
+# project root on sys.path so imports resolve both locally and in CI.
+pythonpath = ["."]
 # Suppress known third-party warnings that clutter output
 filterwarnings = [
     "ignore::DeprecationWarning:pytest_bdd",

@@ -1,0 +1,106 @@
+# Native Playwright workflow — no BDD/Gherkin layer.
+# KEY DIFFERENCE vs bdd-pom.yml:
+#   - asyncio_mode = "auto" is set in pyproject.toml (not needed in BDD branch)
+#   - No pytest-bdd flags or step file patterns
+#   - test_*.py files only (standard pytest discovery)
+#   - Same 3-job structure: lint → ui-tests (matrix) + api-tests
+
+name: Native Playwright CI
+
+on:
+  push:
+    branches: [feature/native-playwright]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: ruff lint
+        run: ruff check .
+
+      - name: ruff format check
+        run: ruff format --check .
+
+      - name: mypy type check
+        run: mypy tests
+
+  ui-tests:
+    name: UI tests (${{ matrix.browser }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install Playwright browsers
+        run: playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run UI tests
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          pytest tests/ -m "not api" -v \
+            --html=reports/ui-${{ matrix.browser }}.html \
+            --self-contained-html
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: ui-report-${{ matrix.browser }}
+          path: reports/ui-${{ matrix.browser }}.html
+
+  api-tests:
+    name: API tests
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install Playwright (chromium for API context)
+        run: playwright install --with-deps chromium
+
+      - name: Run API tests
+        run: |
+          pytest tests/ -m api -v \
+            --html=reports/api.html \
+            --self-contained-html
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: api-report
+          path: reports/api.html
