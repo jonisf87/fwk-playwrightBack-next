@@ -114,6 +114,10 @@ markers = [
 ]
 # Test discovery — equivalent to testDir in playwright.config.ts
 testpaths = ["tests"]
+# KEY DIFFERENCE: pytest only collects files matching test_*.py by default.
+# *_steps.py files must be explicitly added so scenarios() creates test functions.
+# TypeScript Cucumber auto-discovers steps via --require glob — no config needed.
+python_files = ["test_*.py", "*_steps.py"]
 # Suppress known third-party warnings that clutter output
 filterwarnings = [
     "ignore::DeprecationWarning:pytest_bdd",
