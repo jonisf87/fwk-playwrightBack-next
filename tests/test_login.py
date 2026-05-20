@@ -1,20 +1,13 @@
 """
-Native Playwright login tests — no BDD/Gherkin layer.
-BDD branch equivalent: tests/features/login.feature + tests/steps/login_steps.py
+Login tests using pytest-playwright (sync).
 
-KEY DIFFERENCES vs BDD branch:
+KEY DIFFERENCE vs feature/native-playwright:
+  That branch: async def test_* + await page.goto(...)
+  This branch:      def test_* +       page.goto(...)
 
-  1. No Background block — setup is a plain async helper function or fixture.
-     BDD: Background: Given/When/Then in the .feature file
-     Native: async def _register_and_get_credentials() called at the top of each test.
-
-  2. No ScenarioContext — state is local variables within the test function.
-     BDD:    ctx.credentials = {...}  (mutates shared state object)
-     Native: credentials = {...}      (local variable, no shared state needed)
-
-  3. Test structure maps to: Arrange → Act → Assert (AAA pattern).
-     BDD maps to: Given (Arrange) → When (Act) → Then (Assert).
-     Both express the same intent; AAA is idiomatic for unit/integration tests.
+pytest-playwright automatically takes a screenshot if --screenshot=only-on-failure
+is set in pyproject.toml, and saves a trace if --tracing=retain-on-failure.
+No extra code needed — the plugin handles it transparently.
 """
 
 import json
@@ -23,7 +16,7 @@ import time
 from pathlib import Path
 
 import pytest
-from playwright.async_api import APIRequestContext, Page
+from playwright.sync_api import APIRequestContext, Page
 
 from tests.pages.login_page import LoginPage
 
@@ -31,8 +24,7 @@ BASE_URL = "https://demoqa.com"
 DATA_PATH = Path(__file__).parent / "support" / "data.json"
 
 
-async def _ensure_credentials(api_request_context: APIRequestContext) -> dict[str, str]:
-    """Register a user via API (CAPTCHA-free) and persist credentials to data.json."""
+def _ensure_credentials(api_request_context: APIRequestContext) -> dict[str, str]:
     if DATA_PATH.exists():
         data = json.loads(DATA_PATH.read_text())
         username = data.get("userName") or data.get("username")
@@ -43,8 +35,7 @@ async def _ensure_credentials(api_request_context: APIRequestContext) -> dict[st
     username = re.sub(r"[^a-zA-Z0-9]", "", f"user{int(time.time() * 1000)}")
     password = "TestPass1!"
     credentials = {"userName": username, "password": password}
-
-    response = await api_request_context.post(
+    response = api_request_context.post(
         f"{BASE_URL}/Account/v1/User",
         data=credentials,
         headers={"Content-Type": "application/json"},
@@ -55,31 +46,19 @@ async def _ensure_credentials(api_request_context: APIRequestContext) -> dict[st
 
 
 @pytest.mark.ui
-async def test_login_with_valid_credentials(page: Page, api_request_context: APIRequestContext) -> None:
-    """
-    Arrange: register user via API.
-    Act:     fill login form and submit.
-    Assert:  profile page is visible.
-
-    KEY DIFFERENCE — await on every Playwright call:
-    BDD:    login_page.goto()  /  login_page.login(u, p)   (sync)
-    Native: await login_page.goto()  /  await login_page.login(u, p)
-    """
-    credentials = await _ensure_credentials(api_request_context)
-
+def test_login_with_valid_credentials(page: Page, api_request_context: APIRequestContext) -> None:
+    credentials = _ensure_credentials(api_request_context)
     login_page = LoginPage(page)
-    await login_page.goto()
-    await login_page.login(credentials["userName"], credentials["password"])
-
-    assert await login_page.is_logged_in(), "Profile page not visible after login"
+    login_page.goto()
+    login_page.login(credentials["userName"], credentials["password"])
+    assert login_page.is_logged_in(), "Profile page not visible after login"
 
 
 @pytest.mark.ui
-async def test_login_with_invalid_credentials(page: Page) -> None:
+def test_login_with_invalid_credentials(page: Page) -> None:
     login_page = LoginPage(page)
-    await login_page.goto()
-    await login_page.login("invalidUser", "invalidPass")
-
-    error = await login_page.get_error_message()
-    assert error is not None, "Expected a login error message"
+    login_page.goto()
+    login_page.login("invalidUser", "invalidPass")
+    error = login_page.get_error_message()
+    assert error is not None
     assert re.search(r"invalid|not match", error.lower()), f"Unexpected error: '{error}'"

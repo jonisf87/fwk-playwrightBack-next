@@ -1,20 +1,18 @@
 """
-Page Object for demoqa.com/login — async version.
-BDD branch equivalent: tests/pages/login_page.py (sync_api)
+Page Object for demoqa.com/login — sync version for pytest-playwright branch.
 
-KEY DIFFERENCE — sync vs async POM:
-  BDD branch:    def goto(self) → self.page.goto(url)
-  Native branch: async def goto(self) → await self.page.goto(url)
+KEY DIFFERENCE vs feature/native-playwright:
+  That branch: async def goto(self) / await self.page.goto(url)
+  This branch:      def goto(self) /       self.page.goto(url)
 
-Every method that calls Playwright must be async def and awaited by the caller.
-The class itself is identical in structure; only the execution model changes.
+pytest-playwright provides a sync Page fixture. Every method is a plain def.
 """
 
-from playwright.async_api import Page
+from playwright.sync_api import Page
 
 
 class LoginPage:
-    LOGIN_URL = "https://demoqa.com/login"
+    LOGIN_URL = "/login"
     USERNAME_INPUT = "#userName"
     PASSWORD_INPUT = "#password"
     LOGIN_BUTTON = "#login"
@@ -24,28 +22,23 @@ class LoginPage:
     def __init__(self, page: Page) -> None:
         self.page = page
 
-    async def goto(self) -> None:
-        await self.page.goto(self.LOGIN_URL)
+    def goto(self) -> None:
+        self.page.goto(self.LOGIN_URL)
 
-    async def login(self, username: str, password: str) -> None:
-        await self.page.fill(self.USERNAME_INPUT, username)
-        await self.page.fill(self.PASSWORD_INPUT, password)
-        await self.page.click(self.LOGIN_BUTTON)
+    def login(self, username: str, password: str) -> None:
+        self.page.fill(self.USERNAME_INPUT, username)
+        self.page.fill(self.PASSWORD_INPUT, password)
+        self.page.click(self.LOGIN_BUTTON)
 
-    async def is_logged_in(self) -> bool:
+    def is_logged_in(self) -> bool:
         try:
-            await self.page.wait_for_selector(self.PROFILE_INDICATOR, timeout=5000)
+            self.page.wait_for_selector(self.PROFILE_INDICATOR, timeout=5000)
             return True
         except Exception:
             return False
 
-    async def get_error_message(self) -> str | None:
-        """
-        KEY DIFFERENCE — try/except replacing TS try/catch:
-        TS: try { return await page.locator("#name").textContent() } catch { return null }
-        PY: except Exception: return None
-        """
+    def get_error_message(self) -> str | None:
         try:
-            return await self.page.locator(self.ERROR_MESSAGE).text_content(timeout=5000)
+            return self.page.locator(self.ERROR_MESSAGE).text_content(timeout=5000)
         except Exception:
             return None

@@ -1,30 +1,71 @@
-# Playwright Python Framework (native-playwright branch)
+# Playwright Python Framework (native-playwright-reports branch)
 
-End-to-end testing framework for [demoqa.com](https://demoqa.com) built with Python, Playwright, and pytest. This branch demonstrates the **native approach**: tests written as plain `async def test_*` functions with no Gherkin/BDD layer on top.
+End-to-end testing framework for [demoqa.com](https://demoqa.com) built with Python, pytest-playwright, and pytest. This branch demonstrates the **pytest-playwright approach**: tests written as plain `def test_*` functions (sync, no `await`) with pytest-playwright providing the full browser lifecycle and native artifact capture.
 
-If you come from TypeScript, think of this branch as the Python equivalent of writing tests directly with `@playwright/test`. The other branch (`feature/bdd-pom`) is the Cucumber.js equivalent.
+If you come from TypeScript, think of this branch as the Python equivalent of `@playwright/test` with `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` enabled. You get screenshots and traces for free on failure — no extra code.
 
 ---
 
 ## What makes this branch different
 
-The headline feature is `asyncio.gather()`. It lets two simulated users run **truly concurrently** in the same test, which is something the BDD branch cannot do because its step functions are synchronous.
+There are three branches in this repository, each showing a different testing architecture:
+
+| Aspect | feature/bdd-pom | feature/native-playwright | This branch |
+|---|---|---|---|
+| Test format | Gherkin `.feature` files | `async def test_*` | `def test_*` (sync) |
+| Playwright API | sync (pytest-bdd constraint) | async (full `await`) | sync (pytest-playwright) |
+| Browser lifecycle | Manual (conftest fixtures) | Manual (conftest fixtures) | Delegated to pytest-playwright |
+| Concurrency | Sequential | Real (`asyncio.gather`) | Sequential (two contexts) |
+| Screenshots on failure | Manual | Manual | Automatic (`--screenshot`) |
+| Traces on failure | Manual | Manual | Automatic (`--tracing`) |
+| Boilerplate in conftest | High (7 fixtures) | High (6 async fixtures) | Zero (1 override) |
+
+The headline feature of this branch is **zero lifecycle boilerplate**. The entire `conftest.py` is a single fixture override:
 
 ```python
-# Both users start AT THE SAME TIME (not one after the other)
-form_submitted, grid_changed = await asyncio.gather(
-    _user1_form_task(browser),
-    _user2_grid_task(browser),
-)
+@pytest.fixture(scope="session")
+def base_url() -> str:
+    return "https://demoqa.com"
 ```
 
-The TypeScript equivalent is:
-```typescript
-const [formSubmitted, gridChanged] = await Promise.all([
-    user1FormTask(browser),
-    user2GridTask(browser),
-])
+pytest-playwright provides `page`, `browser`, `context`, and `api_request_context` out of the box. You just use them in tests.
+
+**Trade-off vs feature/native-playwright**: by switching to pytest-playwright's sync API, we lose `asyncio.gather()`. The parallel-users test becomes sequential (user 1 completes, then user 2 starts). The TypeScript equivalent of `Promise.all()` is only available in the `feature/native-playwright` branch.
+
+---
+
+## How native artifacts work
+
+pytest-playwright hooks into pytest's reporting lifecycle. When a test fails:
+
+1. A PNG screenshot is saved to `test-results/<test-name>/test-failed-1.png`
+2. A trace archive is saved to `test-results/<test-name>/trace.zip`
+
+These are configured in `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+addopts = "--screenshot=only-on-failure --tracing=retain-on-failure"
 ```
+
+Equivalent to `playwright.config.ts`:
+
+```typescript
+export default defineConfig({
+  use: {
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
+  },
+})
+```
+
+To open a trace after a failure:
+
+```bash
+playwright show-trace test-results/<test-name>/trace.zip
+```
+
+The trace viewer is interactive: it shows DOM snapshots, network requests, console logs, and a timeline for every action.
 
 ---
 
@@ -32,12 +73,12 @@ const [formSubmitted, gridChanged] = await Promise.all([
 
 ```
 tests/
-├── conftest.py               # async fixtures (playwright_instance, browser, page, api_request_context)
+├── conftest.py               # Single base_url override (pytest-playwright handles the rest)
 ├── pages/
-│   ├── login_page.py         # Page Object for demoqa.com/login (async)
-│   ├── registration_page.py  # Page Object for demoqa.com/register (async)
-│   ├── practice_form_page.py # Page Object for the practice form (async)
-│   └── sortable_page.py      # Page Object for demoqa.com/sortable (async)
+│   ├── login_page.py         # Page Object for demoqa.com/login (sync)
+│   ├── registration_page.py  # Page Object for demoqa.com/register (sync)
+│   ├── practice_form_page.py # Page Object for the practice form (sync)
+│   └── sortable_page.py      # Page Object for demoqa.com/sortable (sync)
 ├── fixtures/
 │   └── test-image.png        # image file used in the file upload test
 ├── support/
@@ -46,7 +87,7 @@ tests/
 ├── test_api.py               # 3 API tests (register, token, authenticated user)
 ├── test_login.py             # 2 login tests (valid and invalid credentials)
 ├── test_registration.py      # 2 registration tests (valid and invalid password)
-└── test_parallel_users.py    # 2 tests using asyncio.gather() (the key differentiator)
+└── test_parallel_users.py    # 2 tests with two browser contexts (sequential)
 ```
 
 ---
@@ -54,15 +95,12 @@ tests/
 ## Setup
 
 ```bash
-# Create a virtual environment and install all dependencies (equivalent to npm install)
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-# Install Playwright browsers (equivalent to npx playwright install)
 playwright install chromium
 
-# Generate test credentials (creates tests/support/data.json)
 python tests/support/generate_data.py
 ```
 
@@ -71,23 +109,21 @@ python tests/support/generate_data.py
 ## Running the tests
 
 ```bash
-# All tests
 task test
 
-# API tests only (no browser, much faster)
 task test-api
 
-# UI tests only (opens a browser)
 task test-ui
 
-# With a specific browser (defaults to chromium)
-BROWSER=firefox task test-ui
+pytest tests/ -v --browser firefox
 
-# Verbose output
-pytest tests/ -v
+pytest tests/test_parallel_users.py -v
+```
 
-# One specific test
-pytest tests/test_parallel_users.py::test_two_users_parallel -v
+After a failure, artifacts land in `test-results/<test-name>/`:
+
+```bash
+playwright show-trace test-results/<test-name>/trace.zip
 ```
 
 ---
@@ -95,56 +131,43 @@ pytest tests/test_parallel_users.py::test_two_users_parallel -v
 ## Code quality
 
 ```bash
-task lint          # ruff check (equivalent to ESLint)
-task format        # ruff format (equivalent to Prettier)
-task format-check  # check formatting without modifying files
-task typecheck     # mypy strict (equivalent to tsc --noEmit)
+task lint
+task format
+task format-check
+task typecheck
 ```
 
 ---
 
 ## Key concepts worth knowing
 
-**`asyncio_mode = "auto"` in pyproject.toml**
-pytest-asyncio automatically detects `async def test_*` functions and runs each one inside `asyncio.run()`. Without this setting, async tests are collected but their body never executes (the coroutine object is created but never awaited).
+**pytest-playwright owns the fixture tree**
+When you write `def test_something(page: Page)`, pytest-playwright creates a browser, a context, and a page for you. The `page` fixture is function-scoped by default (a fresh page per test). You never call `async_playwright()` or `browser.new_context()` yourself.
 
-**`async with async_playwright()` in conftest.py**
-Unlike the BDD branch which uses `with sync_playwright()`, the context manager here is async because its `__aenter__` and `__aexit__` are coroutines. Every fixture is `async def` and every Playwright call is `await`-ed.
+**`base_url` integration**
+Because `base_url` is set to `"https://demoqa.com"`, calling `page.goto("/login")` resolves to `https://demoqa.com/login`. This is identical to `playwright.config.ts { use: { baseURL: 'https://demoqa.com' } }`.
+
+**`api_request_context` vs `page.request`**
+pytest-playwright provides an `api_request_context` fixture that creates a standalone HTTP client (no browser, no page). It respects `base_url` so API tests can use `/Account/v1/User` as the path. In TypeScript this is `request.newContext()`.
 
 **`response.status` is a property, not a method**
-The most common mistake when porting from TypeScript: in TS you write `response.status()` (method call), in Python it is `response.status` (integer property, no parentheses). Writing `response.status()` in Python returns a bound method object, which is always truthy, so assertions never fail even on 404 or 500 responses.
+The most common mistake when porting from TypeScript: `response.status()` (method call) becomes `response.status` (integer property, no parentheses) in Python. Writing `response.status()` returns a bound method object, which is always truthy — assertions never fail even on 404 or 500 responses.
 
-**`await response.json()` vs `response.json()`**
-In the BDD branch (sync_api), calling `response.json()` returns the parsed body directly. In this branch (async_api), the same method is a coroutine and must be awaited: `body = await response.json()`.
+**`--browser` flag on the CLI**
+pytest-playwright uses `--browser chromium` (or `firefox`, `webkit`) as a CLI flag. This is how CI passes the browser matrix value — different from the `feature/native-playwright` branch which used a `BROWSER` environment variable.
 
-**`page.evaluate("() => { ... }")` receives a JS string**
-In TypeScript you can pass a real lambda function. In Python the argument must be a string containing JavaScript source code, because Python functions cannot be serialized to JS.
-
-**`asyncio.gather()` vs `Promise.all()`**
-Both schedule all coroutines (or promises) to start at the same time on a single event loop. While one task waits for a network response, the event loop advances the other. This is cooperative concurrency (single thread, multiple coroutines), not multi-threading.
+**Sync vs async API**
+This branch imports from `playwright.sync_api`. The `feature/native-playwright` branch imports from `playwright.async_api`. Both expose the same methods but the sync version blocks the thread; the async version returns coroutines that must be awaited. pytest-playwright works exclusively with `sync_api`.
 
 ---
 
 ## CI/CD
 
-The workflow `.github/workflows/native-playwright.yml` runs three jobs:
+The workflow `.github/workflows/native-playwright-reports.yml` runs three jobs:
 
 ```
 lint  →  ui-tests (chromium + firefox, in parallel)
       →  api-tests
 ```
 
-UI tests only run if lint passes first. API tests and UI tests run in parallel with each other.
-
----
-
-## Comparison with feature/bdd-pom
-
-| Aspect | This branch (native) | BDD branch |
-|---|---|---|
-| Playwright API | `async_api` (await everywhere) | `sync_api` (no await) |
-| Test format | `async def test_*` functions | `@given/@when/@then` steps + `.feature` files |
-| Concurrency | Real (`asyncio.gather()`) | Sequential (sync step functions) |
-| Shared state | Local variables | `ScenarioContext` dataclass |
-| `asyncio_mode` | `"auto"` (required) | Not used |
-| Extra layers | None | pytest-bdd + Gherkin |
+On failure, the `test-results/` directory (screenshots and traces) is uploaded as a CI artifact that can be downloaded from the Actions run page.

@@ -1,0 +1,103 @@
+# pytest-playwright workflow — sync API with native Playwright artifacts.
+#
+# KEY DIFFERENCE vs native-playwright.yml:
+#   - No asyncio_mode — this branch uses pytest-playwright's sync fixtures.
+#   - Browser passed via --browser CLI flag (pytest-playwright convention), not BROWSER env var.
+#   - Native artifacts: --screenshot=only-on-failure --tracing=retain-on-failure (set in pyproject.toml addopts).
+#   - test-results/ artifact uploaded: contains screenshots and trace.zip files for failed tests.
+#     Open a trace with: playwright show-trace trace.zip
+#   - No pytest-asyncio dependency.
+
+name: Native Playwright Reports CI
+
+on:
+  push:
+    branches: [feature/native-playwright-reports]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: ruff lint
+        run: ruff check .
+
+      - name: ruff format check
+        run: ruff format --check .
+
+      - name: mypy type check
+        run: mypy tests
+
+  ui-tests:
+    name: UI tests (${{ matrix.browser }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install Playwright browsers
+        # KEY DIFFERENCE: pytest-playwright installs browsers the same way, but the
+        # --with-deps flag also installs system-level OS dependencies (fonts, libs).
+        # Without it, Chromium/Firefox launch fails on bare Ubuntu runners.
+        run: playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run UI tests
+        # KEY DIFFERENCE vs native-playwright: browser is passed as a CLI flag.
+        # pytest-playwright reads --browser and injects the right browser fixture.
+        # The BROWSER env var approach in native-playwright required custom conftest logic.
+        run: pytest tests/ -m "not api" -v --browser ${{ matrix.browser }}
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: test-results-${{ matrix.browser }}
+          # test-results/ is the default output dir for pytest-playwright artifacts
+          # (screenshots, traces). Equivalent to Playwright TS outputDir config.
+          path: test-results/
+
+  api-tests:
+    name: API tests
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install Playwright (chromium for API context)
+        run: playwright install --with-deps chromium
+
+      - name: Run API tests
+        run: pytest tests/ -m api -v

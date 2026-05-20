@@ -1,110 +1,57 @@
 """
-Async pytest fixtures for the native Playwright branch.
+pytest-playwright conftest for feature/native-playwright-reports.
 
-═══════════════════════════════════════════════════════════════════════════════
-ARCHITECTURAL CONTRAST — native branch vs BDD branch
-═══════════════════════════════════════════════════════════════════════════════
+KEY DIFFERENCE vs feature/native-playwright:
+  That branch manages the full Playwright lifecycle manually (async_playwright,
+  Browser, BrowserContext, Page as async fixtures). This branch delegates all of
+  that to pytest-playwright, which provides the same fixtures out of the box —
+  plus screenshot, trace, and video capture with zero extra code.
 
-BDD branch (feature/bdd-pom):
-  - playwright.sync_api  — all Playwright calls block, no await
-  - pytest-bdd + Gherkin — scenarios() + @given/@when/@then
-  - ScenarioContext dataclass — replaces CustomWorld instance attributes
-  - Before/After via @pytest.fixture yield — replaces Cucumber hooks
-  - Step functions are sync def — matches pytest-bdd's sync execution model
-  - NO asyncio_mode needed
+  native-playwright         →  feature/native-playwright-reports
+  ─────────────────────────────────────────────────────────────
+  async def playwright_instance()   →  (provided by pytest-playwright)
+  async def browser()               →  (provided by pytest-playwright)
+  async def context()               →  (provided by pytest-playwright)
+  async def page()                  →  (provided by pytest-playwright)
+  async def api_request_context()   →  defined here (removed from pytest-playwright 0.5+)
+  asyncio_mode = "auto"             →  not needed (sync API)
+  asyncio.gather() concurrency      →  sequential (two contexts, one after the other)
 
-Native branch (feature/native-playwright):
-  - playwright.async_api  — all Playwright calls must be awaited
-  - Pure pytest  — test_*.py functions, no Gherkin layer
-  - No shared state object — test functions receive fixtures directly
-  - asyncio_mode = "auto" in pyproject.toml — pytest-asyncio runs every
-    async def test_* as a coroutine on a fresh event loop
-  - asyncio.gather() enables TRUE concurrent execution across contexts
+pytest-playwright fixture reference:
+  https://playwright.dev/python/docs/test-runners#fixtures
 
-KEY DIFFERENCE — async_playwright() context manager:
-  BDD:    with sync_playwright() as pw: yield pw
-  Native: async with async_playwright() as pw: yield pw
-          ↑ 'async with' because __aenter__/__aexit__ are coroutines
+Artifacts are configured in pyproject.toml [tool.pytest.ini_options]:
+  addopts = "--screenshot=only-on-failure --tracing=retain-on-failure"
 
-KEY DIFFERENCE — fixture teardown:
-  BDD:    b.close()        (sync, no await)
-  Native: await b.close()  (must await — returns a coroutine)
-
-KEY DIFFERENCE — why asyncio_mode = "auto":
-  pytest-asyncio detects async def test_* functions and wraps them in
-  asyncio.run() automatically. Without this, async tests are collected but
-  their bodies never execute (the coroutine is created but not awaited).
-  The BDD branch does NOT set this because all its step functions are sync.
+Artifacts land in test-results/<test-name>/ and can be opened with:
+  playwright show-trace test-results/<name>/trace.zip
 """
 
-import os
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 
 import pytest
-from playwright.async_api import (
-    APIRequestContext,
-    Browser,
-    BrowserContext,
-    Page,
-    Playwright,
-    async_playwright,
-)
+from playwright.sync_api import APIRequestContext, Playwright
 
 BASE_URL = "https://demoqa.com"
 
 
-@pytest.fixture
-async def playwright_instance() -> AsyncGenerator[Playwright, None]:
+@pytest.fixture(scope="session")
+def base_url() -> str:
     """
-    Launch async Playwright driver.
-
-    KEY DIFFERENCE — async context manager:
-      BDD:    with sync_playwright() as pw: yield pw
-      Native: async with async_playwright() as pw: yield pw
+    Override pytest-playwright's base_url fixture.
+    All page.goto("/path") calls resolve to https://demoqa.com/path.
+    Equivalent to playwright.config.ts { use: { baseURL: 'https://demoqa.com' } }.
     """
-    async with async_playwright() as pw:
-        yield pw
+    return BASE_URL
 
 
-@pytest.fixture
-def browser_name() -> str:
-    return os.environ.get("BROWSER", "chromium").lower()
-
-
-@pytest.fixture
-async def browser(playwright_instance: Playwright, browser_name: str) -> AsyncGenerator[Browser, None]:
+@pytest.fixture(scope="session")
+def api_request_context(playwright: Playwright) -> Generator[APIRequestContext, None, None]:
     """
-    KEY DIFFERENCE — await launch() and await close():
-      BDD:    b = launcher.launch(headless=True)  /  b.close()
-      Native: b = await launcher.launch(headless=True)  /  await b.close()
+    Standalone HTTP client, no browser required.
+    pytest-playwright removed this built-in fixture in v0.5+; we recreate it here.
+    Equivalent to TypeScript's request.newContext({ baseURL }) in a global setup file.
     """
-    launcher = getattr(playwright_instance, browser_name)
-    b = await launcher.launch(headless=True)
-    yield b
-    await b.close()
-
-
-@pytest.fixture
-async def context(browser: Browser) -> AsyncGenerator[BrowserContext, None]:
-    ctx = await browser.new_context(base_url=BASE_URL)
+    ctx = playwright.request.new_context(base_url=BASE_URL)
     yield ctx
-    await ctx.close()
-
-
-@pytest.fixture
-async def page(context: BrowserContext) -> AsyncGenerator[Page, None]:
-    """
-    KEY DIFFERENCE — yield value and teardown both require await:
-      BDD:    p = context.new_page()  /  p.close()
-      Native: p = await context.new_page()  /  await p.close()
-    """
-    p = await context.new_page()
-    yield p
-    await p.close()
-
-
-@pytest.fixture
-async def api_request_context(playwright_instance: Playwright) -> AsyncGenerator[APIRequestContext, None]:
-    ctx = await playwright_instance.request.new_context(base_url=BASE_URL)
-    yield ctx
-    await ctx.dispose()
+    ctx.dispose()

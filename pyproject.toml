@@ -18,10 +18,11 @@ dev = [
     "playwright>=1.44.0",
     # Test runner — replaces Cucumber.js as the execution engine
     "pytest>=8.0.0",
-    # Async test support — required for async def test_* functions.
-    # KEY DIFFERENCE: pinned to <1.0 — pytest-asyncio 1.x changed the default mode
-    # and broke async fixture injection in some configurations.
-    "pytest-asyncio>=0.23.0,<1.0",
+    # pytest-playwright provides page/browser/context fixtures + screenshot/trace capture.
+    # KEY DIFFERENCE vs feature/native-playwright: that branch manages the full Playwright
+    # lifecycle manually (async_playwright, Browser, BrowserContext, Page as async fixtures).
+    # This branch delegates all of that to pytest-playwright — zero lifecycle boilerplate.
+    "pytest-playwright>=0.5.0",
     # Test data generation — replaces @faker-js/faker
     "Faker>=25.0.0",
     # Linter + formatter — replaces ESLint AND Prettier in a single Rust binary
@@ -32,8 +33,6 @@ dev = [
     "taskipy>=1.13.0",
     # Local git hooks — no direct TS equivalent (was CI-only in the original project)
     "pre-commit>=3.7.0",
-    # HTML test reports — replaces Cucumber's --format html reporter
-    "pytest-html>=4.0.0",
 ]
 
 # KEY DIFFERENCE: taskipy replaces npm scripts.
@@ -72,8 +71,6 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Relax naming rules in step definitions — BDD step strings use natural language
-"tests/steps/**" = ["N802", "N803"]
 # Test files: allow assert statements and magic method usage
 "tests/test_*.py" = ["N802"]
 
@@ -85,8 +82,6 @@ ignore = [
 python_version = "3.11"
 strict = true
 ignore_missing_imports = true  # third-party stubs not always available
-# Exclude step definitions — pytest-bdd uses dynamic fixture injection that
-# confuses mypy's strict mode (parameters appear "unused" to static analysis)
 exclude = ["tests/conftest", "tests/test_"]
 
 [[tool.mypy.overrides]]
@@ -98,10 +93,13 @@ strict = true
 # TypeScript playwright.config.ts set: testDir, headless, screenshot, video, baseURL, reporter
 # Python splits these: pytest options here, browser config in conftest.py fixtures
 [tool.pytest.ini_options]
-# KEY DIFFERENCE: asyncio_mode = "auto" means every "async def test_*" function
-# is automatically treated as an asyncio coroutine — no @pytest.mark.asyncio needed per test.
-# TypeScript's Playwright runner handled this transparently via its own event loop.
-asyncio_mode = "auto"
+# KEY DIFFERENCE vs feature/native-playwright: no asyncio_mode here because this branch
+# uses pytest-playwright's sync API. Tests are plain "def test_*" functions — no await.
+# addopts enables native Playwright artifacts on every run:
+#   --screenshot=only-on-failure  saves a PNG when a test fails
+#   --tracing=retain-on-failure   saves a trace.zip when a test fails
+# Equivalent to playwright.config.ts { use: { screenshot: 'only-on-failure', trace: 'retain-on-failure' } }
+addopts = "--screenshot=only-on-failure --tracing=retain-on-failure"
 # Custom markers — equivalent to Cucumber's @ui and @api tags
 # Run with: pytest -m api  or  pytest -m "not api"
 markers = [
@@ -115,6 +113,5 @@ testpaths = ["tests"]
 pythonpath = ["."]
 # Suppress known third-party warnings that clutter output
 filterwarnings = [
-    "ignore::DeprecationWarning:pytest_bdd",
     "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
