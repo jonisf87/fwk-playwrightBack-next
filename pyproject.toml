@@ -25,10 +25,21 @@ dev = [
     "playwright>=1.44.0",
     # Test runner — replaces Cucumber.js as the execution engine
     "pytest>=8.0.0",
-    # Async test support — required because playwright-python uses asyncio
-    "pytest-asyncio>=0.23.0",
-    # BDD/Gherkin layer — replaces @cucumber/cucumber (branch feature/bdd-pom only)
-    "pytest-bdd>=7.0.0",
+    # Async test support — required because playwright-python uses asyncio.
+    # KEY DIFFERENCE: pinned to <1.0 — pytest-asyncio 1.x broke async step execution
+    # with pytest-bdd v8: the bdd wrapper does not preserve the coroutine nature of
+    # async step functions, so pytest-asyncio 1.x never awaits them. Fixtures receive
+    # a raw coroutine object instead of the resolved value (silent bug: sync @then steps
+    # fail, async @then steps "pass" vacuously because no assertion runs).
+    # 0.23.x handles this correctly with asyncio_mode = "auto".
+    "pytest-asyncio>=0.23.0,<1.0",
+    # BDD/Gherkin layer — replaces @cucumber/cucumber (branch feature/bdd-pom only).
+    # KEY DIFFERENCE: pinned to <8.0 — pytest-bdd v8 changed step discovery from a
+    # global registry (v7) to pytest's fixture mechanism. Steps defined in one module
+    # are no longer visible to tests in other modules unless exported via conftest.py.
+    # Pinning to v7 keeps the global registry behaviour that matches the TS/Cucumber
+    # auto-discovery model and avoids cross-module re-export boilerplate in conftest.
+    "pytest-bdd>=7.0.0,<8.0",
     # Test data generation — replaces @faker-js/faker
     "Faker>=25.0.0",
     # Linter + formatter — replaces ESLint AND Prettier in a single Rust binary
