@@ -145,4 +145,6 @@ python_files = ["test_*.py", "*_steps.py"]
 filterwarnings = [
     "ignore::DeprecationWarning:pytest_bdd",
     "ignore::pytest.PytestUnraisableExceptionWarning",
+    # pytest-bdd v7 emits PytestWarning for usefixtures() with empty arg list — internal, not our code
+    "ignore:usefixtures.*without arguments has no effect:pytest.PytestWarning",
 ]
