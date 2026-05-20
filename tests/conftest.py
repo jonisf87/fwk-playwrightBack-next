@@ -29,29 +29,59 @@ Python / pytest approach:
                          ↑ injected             ↑ injected
                          by 'page' fixture      by 'ctx' fixture
 
-KEY CONCEPT: pytest's dependency injection resolves fixtures by PARAMETER NAME.
-If a function has a parameter named 'page', pytest finds the fixture named 'page'
-and calls it. This is why setWorldConstructor() is not needed — pytest wires
-dependencies automatically at call time.
+KEY CONCEPT — sync vs async Playwright API:
+  This branch (feature/bdd-pom) uses playwright.sync_api.
+  pytest-bdd calls step functions SYNCHRONOUSLY via its internal _execute_step_function.
+  It does not await coroutines, so async step functions are silently broken.
+  Using the sync API matches pytest-bdd's execution model perfectly.
+
+  The native branch (feature/native-playwright) uses playwright.async_api with
+  asyncio.gather() for true concurrency — pytest test functions are async and
+  pytest-asyncio handles the event loop correctly there.
+
+KEY DIFFERENCE: asyncio_mode is NOT needed in this branch because all Playwright
+  calls are synchronous. The native branch needs asyncio_mode = "auto" because its
+  test functions are async def.
+
+BACKGROUND STEP REGISTRATION (why shared steps live here):
+  pytest-bdd v7 populates the global step registry when @given/@when/@then decorators
+  run at module import time. Test files are collected alphabetically:
+  login_steps.py is imported before registration_steps.py. When scenarios() fires for
+  login.feature, the Background steps defined in registration_steps.py are not yet
+  registered → StepDefinitionNotFoundError.
+  Defining those Background steps here guarantees they are registered before any
+  *_steps.py file is collected.
 """
 
+import json
 import os
-from collections.abc import AsyncGenerator
+import re
+import time
+from collections.abc import Generator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pytest
-from playwright.async_api import (
+from faker import Faker
+from playwright.sync_api import (
     APIRequestContext,
     APIResponse,
     Browser,
     BrowserContext,
     Page,
     Playwright,
-    async_playwright,
+    sync_playwright,
 )
+from pytest_bdd import given, then, when
+
+from tests.pages.registration_page import RegistrationPage
 
 BASE_URL = "https://demoqa.com"
+
+# Shared between Background steps and any module that imports _generate_username
+fake = Faker()
+DATA_PATH = Path(__file__).parent / "support" / "data.json"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,19 +138,22 @@ class ScenarioContext:
 
 
 @pytest.fixture
-async def playwright_instance() -> AsyncGenerator[Playwright, None]:
+def playwright_instance() -> Generator[Playwright, None, None]:
     """
-    Launch the Playwright driver.
+    Launch the Playwright driver using the SYNCHRONOUS API.
 
-    KEY DIFFERENCE: Playwright in Python is used as an async context manager.
-      TS: (implicitly managed by @playwright/test runner)
-      PY: async with async_playwright() as pw: yield pw
+    KEY DIFFERENCE: sync_playwright() vs async_playwright():
+      BDD branch:    with sync_playwright() as pw: yield pw
+      Native branch: async with async_playwright() as pw: yield pw
 
-    'async with' ensures __aenter__ and __aexit__ are called correctly.
-    The 'yield' inside an async context manager is valid Python — the fixture
-    stays alive (inside the 'with' block) for the duration of the test.
+    pytest-bdd calls step functions synchronously — using sync_playwright()
+    means all Playwright calls (goto, fill, click, etc.) block until complete,
+    which is exactly what a sequential BDD scenario needs.
+
+    TypeScript's @playwright/test runner managed this transparently; Python
+    requires an explicit choice between sync and async APIs.
     """
-    async with async_playwright() as pw:
+    with sync_playwright() as pw:
         yield pw
 
 
@@ -139,7 +172,7 @@ def browser_name() -> str:
 
 
 @pytest.fixture
-async def browser(playwright_instance: Playwright, browser_name: str) -> AsyncGenerator[Browser, None]:
+def browser(playwright_instance: Playwright, browser_name: str) -> Generator[Browser, None, None]:
     """
     Launch the browser. Equivalent to CustomWorld.init()'s browser selection.
 
@@ -154,41 +187,42 @@ async def browser(playwright_instance: Playwright, browser_name: str) -> AsyncGe
 
       PY:
         launcher = getattr(playwright_instance, browser_name)
-        browser  = await launcher.launch(headless=True)
+        browser  = launcher.launch(headless=True)
 
     getattr(obj, name) is equivalent to obj.<name> but with a dynamic string.
     playwright_instance.chromium, playwright_instance.firefox, playwright_instance.webkit
     are all valid attributes — getattr selects the right one at runtime.
 
-    KEY DIFFERENCE — fixture teardown:
+    KEY DIFFERENCE — fixture teardown (sync vs async):
       TS: await this.browser?.close() in After hook
-      PY: await b.close() after yield — runs automatically when the test ends
+      BDD: b.close() after yield  — sync, no await needed
+      Native: await b.close() after yield — async
     """
     launcher = getattr(playwright_instance, browser_name)
-    b = await launcher.launch(headless=True)
+    b = launcher.launch(headless=True)
     yield b
-    await b.close()  # ← After hook equivalent — runs after test completes
+    b.close()
 
 
 @pytest.fixture
-async def context(browser: Browser) -> AsyncGenerator[BrowserContext, None]:
+def context(browser: Browser) -> Generator[BrowserContext, None, None]:
     """
     Create a browser context.
 
     KEY DIFFERENCE:
       TS: this.context = await this.browser.newContext()
-      PY: ctx = await browser.new_context(base_url=BASE_URL)
+      PY: ctx = browser.new_context(base_url=BASE_URL)
 
     base_url means page.goto("/login") resolves to "https://demoqa.com/login".
     The TS project used full URLs in each goto() call — base_url is cleaner.
     """
-    ctx = await browser.new_context(base_url=BASE_URL)
+    ctx = browser.new_context(base_url=BASE_URL)
     yield ctx
-    await ctx.close()
+    ctx.close()
 
 
 @pytest.fixture
-async def page(context: BrowserContext) -> AsyncGenerator[Page, None]:
+def page(context: BrowserContext) -> Generator[Page, None, None]:
     """
     Open a page within the browser context.
 
@@ -198,16 +232,16 @@ async def page(context: BrowserContext) -> AsyncGenerator[Page, None]:
 
     In step definitions:
       TS: When('...', async function(this: CustomWorld) { await this.page.fill(...) })
-      PY: @when('...')  async def step(page: Page): await page.fill(...)
-                                            ↑ injected automatically
+      PY: @when('...')  def step(page: Page): page.fill(...)
+                                   ↑ injected automatically, no await needed (sync API)
     """
-    p = await context.new_page()
+    p = context.new_page()
     yield p
-    await p.close()
+    p.close()
 
 
 @pytest.fixture
-async def api_request_context(playwright_instance: Playwright) -> AsyncGenerator[APIRequestContext, None]:
+def api_request_context(playwright_instance: Playwright) -> Generator[APIRequestContext, None, None]:
     """
     Create an API-only request context (no browser).
 
@@ -220,13 +254,13 @@ async def api_request_context(playwright_instance: Playwright) -> AsyncGenerator
           A step that needs a browser declares 'page'. pytest handles the rest.
           No tag detection needed — the fixture requested determines what's created.
 
-    KEY DIFFERENCE — disposal method:
-      TS: await this.apiRequestContext?.dispose()   — optional chaining (?.) for null safety
-      PY: await ctx.dispose()                       — fixture is guaranteed non-None here
+    KEY DIFFERENCE — disposal method (sync):
+      TS: await this.apiRequestContext?.dispose()
+      PY: ctx.dispose()   — sync, no await or optional chaining needed
     """
-    ctx = await playwright_instance.request.new_context(base_url=BASE_URL)
+    ctx = playwright_instance.request.new_context(base_url=BASE_URL)
     yield ctx
-    await ctx.dispose()
+    ctx.dispose()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -249,3 +283,94 @@ def ctx() -> ScenarioContext:
       PY: ctx.api_token = response["token"]   (ctx injected as parameter)
     """
     return ScenarioContext()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Background step definitions shared by login.feature and registration.feature
+# ─────────────────────────────────────────────────────────────────────────────
+# These three steps appear in the Background block of login.feature.
+# They are defined here — not in registration_steps.py — because pytest-bdd v7
+# populates its global step registry at @decorator execution time (module import).
+# login_steps.py is alphabetically before registration_steps.py, so when
+# scenarios("login.feature") runs it would fail to find these steps.
+# conftest.py is always loaded first, so registration happens before any *_steps.py.
+
+
+def _generate_username() -> str:
+    """Strip non-alphanumeric chars and append millisecond timestamp for uniqueness.
+    TS: faker.internet.userName().replace(/[^a-zA-Z0-9]/g, '') + Date.now()
+    PY: re.sub(r'[^a-zA-Z0-9]', '', fake.user_name()) + str(int(time.time() * 1000))
+    """
+    return re.sub(r"[^a-zA-Z0-9]", "", fake.user_name()) + str(int(time.time() * 1000))
+
+
+@given("I navigate to the registration page", target_fixture="registration_page")
+def navigate_to_registration_page(page: Page) -> RegistrationPage:
+    """
+    KEY DIFFERENCE — target_fixture:
+    TS: this.pageObj = new RegistrationPage(this.page)  — mutates World state
+    PY: return RegistrationPage(page)                   — becomes the 'registration_page' fixture
+    Subsequent steps declare 'registration_page: RegistrationPage' and pytest injects it.
+    """
+    reg_page = RegistrationPage(page)
+    reg_page.goto()
+    return reg_page
+
+
+@when("I fill in the registration form with valid data")
+def fill_registration_valid(
+    registration_page: RegistrationPage,
+    page: Page,
+) -> None:
+    """
+    API-bypass strategy: register via REST API to avoid CAPTCHA, then assert via page object.
+
+    KEY DIFFERENCE — response.status is a PROPERTY, not a method:
+    TS: response.status()   → returns number
+    PY: response.status     → integer property (no parentheses — calling it returns a bound method)
+
+    KEY DIFFERENCE — response.json() is synchronous in sync_api:
+    TS: const body = await response.json()
+    PY: body = response.json()   (no await)
+    """
+    if DATA_PATH.exists():
+        data = json.loads(DATA_PATH.read_text())
+        username = data.get("userName") or data.get("username")
+        password = data.get("password")
+    else:
+        username = _generate_username()
+        password = "TestPass1!"
+        DATA_PATH.write_text(json.dumps({"userName": username, "password": password}, indent=2))
+
+    if not username or not password:
+        raise ValueError("Credentials missing from data.json")
+
+    response = page.request.post(
+        f"{BASE_URL}/Account/v1/User",
+        data={"userName": username, "password": password},
+        headers={"Content-Type": "application/json"},
+    )
+
+    if response.status == 201:
+        registration_page._registration_message = "User Register Successfully."
+    elif response.status == 406:
+        body = response.json()
+        if isinstance(body.get("message"), str) and "User exists" in body["message"]:
+            registration_page._registration_message = "User Register Successfully."
+        else:
+            raise AssertionError(f"API registration failed: {body}")
+    else:
+        text = response.text()
+        raise AssertionError(f"API registration failed ({response.status}): {text}")
+
+
+@then("I should see a success message")
+def see_success_message(registration_page: RegistrationPage) -> None:
+    """
+    KEY DIFFERENCE — assert vs expect:
+    TS: expect(message?.trim()).toBe('User Register Successfully.')
+    PY: assert message.strip() == "User Register Successfully."
+    """
+    message = getattr(registration_page, "_registration_message", None)
+    assert message is not None, "Registration message was never set"
+    assert message.strip() == "User Register Successfully."

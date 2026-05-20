@@ -3,33 +3,27 @@ Page Object for demoqa.com/register.
 TypeScript equivalent: tests/pages/RegistrationPage.ts
 
 KEY DIFFERENCES — RegistrationPage:
-  1. Shorthand constructor in TypeScript ('private' auto-assigns) vs Python's explicit __init__:
-     TS: constructor(private page: Page) {}   — 'page' is declared AND assigned in one line
-     PY: def __init__(self, page: Page) -> None: self.page = page  — always explicit
+  1. SYNC API — no async/await in this branch.
+     TS: await this.page.goto(...)
+     PY: self.page.goto(...)    (sync, blocks until complete)
 
-  2. CAPTCHA frame detection — most important difference in this class:
+  2. CAPTCHA frame detection:
      TS: const captchaFrame = frames.find(f => f.url().includes('google.com/recaptcha'))
-         → Array.find() returns the first match or undefined
+         → Array.find() with f.url() as METHOD CALL
 
-     PY: captcha_frame = next((f for f in self.page.frames if "google.com/recaptcha" in f.url), None)
-         → next() on a generator expression returns the first match or None (the default)
+     PY: next((f for f in self.page.frames if "google.com/recaptcha" in f.url), None)
+         → next() on generator expression; f.url is a PROPERTY (no parentheses)
 
-     The pattern 'next((x for x in iterable if condition), default)' is the idiomatic Python
-     replacement for JavaScript's Array.find(). It short-circuits on first match.
-
-     Also note: TS uses f.url() (method call) — PY uses f.url (property, no parentheses).
+     Using f.url() in Python would return a bound method object (always truthy).
+     This is one of the most common bugs when porting Playwright from TS to Python.
 
   3. Locator waitFor vs wait_for:
      TS: await this.page.locator(sel).waitFor({ state: 'visible', timeout: 10000 })
-     PY: await self.page.locator(sel).wait_for(state="visible", timeout=10000)
+     PY: self.page.locator(sel).wait_for(state="visible", timeout=10000)
      Identical semantics, snake_case in Python.
-
-  4. Return types for getters:
-     TS: async getSuccessMessage() — implicit return type (inferred as Promise<string | null>)
-     PY: async def get_success_message(self) -> str | None  — explicit annotation required by mypy
 """
 
-from playwright.async_api import Page
+from playwright.sync_api import Page
 
 
 class RegistrationPage:
@@ -44,57 +38,56 @@ class RegistrationPage:
     def __init__(self, page: Page) -> None:
         self.page = page
 
-    async def goto(self) -> None:
-        await self.page.goto("https://demoqa.com/register")
+    def goto(self) -> None:
+        self.page.goto("https://demoqa.com/register")
 
-    async def fill_first_name(self, first_name: str) -> None:
-        await self.page.locator(self.FIRST_NAME_INPUT).wait_for(state="visible", timeout=10000)
-        await self.page.fill(self.FIRST_NAME_INPUT, first_name)
+    def fill_first_name(self, first_name: str) -> None:
+        self.page.locator(self.FIRST_NAME_INPUT).wait_for(state="visible", timeout=10000)
+        self.page.fill(self.FIRST_NAME_INPUT, first_name)
 
-    async def fill_last_name(self, last_name: str) -> None:
-        await self.page.locator(self.LAST_NAME_INPUT).wait_for(state="visible", timeout=10000)
-        await self.page.fill(self.LAST_NAME_INPUT, last_name)
+    def fill_last_name(self, last_name: str) -> None:
+        self.page.locator(self.LAST_NAME_INPUT).wait_for(state="visible", timeout=10000)
+        self.page.fill(self.LAST_NAME_INPUT, last_name)
 
-    async def fill_username(self, username: str) -> None:
-        await self.page.locator(self.USERNAME_INPUT).wait_for(state="visible", timeout=10000)
-        await self.page.fill(self.USERNAME_INPUT, username)
+    def fill_username(self, username: str) -> None:
+        self.page.locator(self.USERNAME_INPUT).wait_for(state="visible", timeout=10000)
+        self.page.fill(self.USERNAME_INPUT, username)
 
-    async def fill_password(self, password: str) -> None:
-        await self.page.locator(self.PASSWORD_INPUT).wait_for(state="visible", timeout=10000)
-        await self.page.fill(self.PASSWORD_INPUT, password)
+    def fill_password(self, password: str) -> None:
+        self.page.locator(self.PASSWORD_INPUT).wait_for(state="visible", timeout=10000)
+        self.page.fill(self.PASSWORD_INPUT, password)
 
-    async def click_captcha_checkbox(self) -> None:
+    def click_captcha_checkbox(self) -> None:
         """
         Attempt to click the reCAPTCHA iframe checkbox if present.
 
-        KEY DIFFERENCE: CAPTCHA frame detection — see module docstring, point 2.
-        TS: const captchaFrame = frames.find(f => f.url().includes('google.com/recaptcha'))
-        PY: next((f for f in self.page.frames if "google.com/recaptcha" in f.url), None)
-
-        'f.url' in Python is a property (no parentheses).
-        'f.url()' in TypeScript is a method call.
-        This is one of the most common bugs when porting Playwright from TS to Python.
+        KEY DIFFERENCE: f.url is a PROPERTY in Python (no parentheses).
+        TS: f.url()  → Python: f.url
+        Writing f.url() in Python returns a bound method object (always truthy).
         """
-        # KEY DIFFERENCE: self.page.frames is a list property in Python.
-        # TS: this.page.frames() — method call returning array
-        # PY: self.page.frames  — property returning list (no parentheses)
         captcha_frame = next(
             (f for f in self.page.frames if "google.com/recaptcha" in f.url),
             None,
         )
         if captcha_frame:
             try:
-                await captcha_frame.click("#recaptcha-anchor", timeout=5000)
+                captcha_frame.click("#recaptcha-anchor", timeout=5000)
             except Exception:  # noqa: BLE001
-                pass  # ignore if CAPTCHA is not interactable — same as TS catch {}
+                pass
 
-    async def click_register(self) -> None:
-        await self.page.click(self.REGISTER_BUTTON)
+    def click_register(self) -> None:
+        self.page.click(self.REGISTER_BUTTON)
 
-    async def get_success_message(self) -> str | None:
-        # KEY DIFFERENCE: text_content() vs textContent()
-        # Both return the text of the element or None if the element has no text.
-        return await self.page.locator(self.SUCCESS_MESSAGE).text_content()
+    def get_success_message(self) -> str | None:
+        return self.page.locator(self.SUCCESS_MESSAGE).text_content()
 
-    async def get_error_message(self) -> str | None:
-        return await self.page.locator(self.ERROR_MESSAGE).text_content()
+    def get_error_message(self) -> str | None:
+        """
+        KEY DIFFERENCE — try/except wraps the locator call:
+        TS: try { return await page.locator("#name").textContent({ timeout: 15000 }) } catch { return null }
+        PY: use try/except so missing element returns None instead of raising TimeoutError.
+        """
+        try:
+            return self.page.locator(self.ERROR_MESSAGE).text_content(timeout=15000)
+        except Exception:
+            return None

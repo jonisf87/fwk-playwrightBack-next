@@ -4,47 +4,40 @@ TypeScript equivalent: tests/steps/ParallelUsers.steps.ts
 
 KEY DIFFERENCES — Parallel users:
 
-  1. Browser contexts — identical API:
+  1. SYNC API — no async/await in this branch.
      TS: const context = await this.browser.newContext()
-     PY: context = await browser.new_context()
-     The 'browser' fixture is injected — no 'this.browser' needed.
+     PY: context = browser.new_context()    (sync, blocks until complete)
 
-  2. asyncio.gather() vs Promise.all():
-     The TypeScript version runs user 1 and user 2 SEQUENTIALLY (separate @When steps).
-     Each step creates its own browser context, does its work, and closes the context.
-     This is "parallel simulation" in the sense of isolated contexts, not true concurrency.
+  2. Sequential execution in BDD branch vs true concurrency in native branch:
+     This BDD branch runs user 1 and user 2 SEQUENTIALLY (separate @When steps).
+     Each step creates its own isolated browser context, does its work, closes it.
 
-     In this BDD branch we preserve the sequential structure to match the TypeScript design.
-     The native Playwright branch (feature/native-playwright) demonstrates TRUE concurrency
-     using asyncio.gather([user1_task(), user2_task()]) — Python's equivalent of Promise.all().
+     The native branch (feature/native-playwright) uses TRUE concurrency:
+     TS: await Promise.all([task1(), task2()])
+     PY: await asyncio.gather(task1(), task2())
 
-     KEY DIFFERENCE:
-     TS Promise.all():    await Promise.all([task1(), task2()])   — true concurrent JS tasks
-     PY asyncio.gather(): await asyncio.gather(task1(), task2()) — true concurrent Python coroutines
      Both are cooperative (single-threaded) concurrency on an event loop.
+     The BDD branch can't use asyncio.gather() because step functions are sync.
 
-  3. page.$eval() vs page.evaluate():
+  3. page.$eval() vs eval_on_selector():
      TS: await page.$eval('#userEmail', (el: HTMLInputElement) => el.validity.valid)
-     PY: await page.eval_on_selector('#userEmail', '(el) => el.validity.valid')
-     page.$eval() in TS passes a JS function as a Python callable — in PY it must be a string.
-     Alternatively: await page.evaluate('(sel) => document.querySelector(sel).validity.valid', '#userEmail')
+     PY: page.eval_on_selector('#userEmail', '(el) => el.validity.valid')
+     page.$eval() in TS passes a JS function as a TypeScript value — in Python it must be a string.
 
   4. inner_html() / text_content() on missing elements:
-     TS: await form.page.locator('.modal-content').innerHTML().catch(() => '')
-     PY: try: await page.locator('.modal-content').inner_html() \n    except: modal_html = ''
-     TypeScript Promise.catch() is replaced by Python try/except on the coroutine.
+     TS: form.page.locator('.modal-content').innerHTML().catch(() => '')
+     PY: try: modal.inner_html() \n    except: modal_html = ''
 
-  5. waitForTimeout vs asyncio.sleep:
-     TS: await form.page.waitForTimeout(300)   — Playwright's built-in wait
-     PY: await page.wait_for_timeout(300)      — identical API, snake_case
-     Note: asyncio.sleep(0.3) also works but wait_for_timeout is idiomatic in Playwright tests.
+  5. wait_for_timeout vs waitForTimeout:
+     TS: await page.waitForTimeout(300)
+     PY: page.wait_for_timeout(300)    (sync, snake_case)
 """
 
 import re
 from pathlib import Path
 
 from faker import Faker
-from playwright.async_api import Browser
+from playwright.sync_api import Browser
 from pytest_bdd import scenarios, then, when
 
 from tests.conftest import ScenarioContext
@@ -58,114 +51,110 @@ SAMPLE_IMAGE = Path(__file__).parent.parent / "fixtures" / "test-image.png"
 
 
 @when("user 1 fills and submits the automation practice form with valid data")
-async def user_1_submits_form(browser: Browser, ctx: ScenarioContext) -> None:
+def user_1_submits_form(browser: Browser, ctx: ScenarioContext) -> None:
     """
     Creates an isolated browser context for user 1.
     TS: const context = await this.browser.newContext()
-    PY: context = await browser.new_context()
-    The browser fixture is injected — same resource, different syntax.
+    PY: context = browser.new_context()    (sync)
     """
-    context = await browser.new_context()
-    page = await context.new_page()
+    context = browser.new_context()
+    page = context.new_page()
 
     form = PracticeFormPage(page)
-    await form.goto()
-    await form.hide_overlays()
-    await form.fill_first_name(fake.first_name())
-    await form.fill_last_name(fake.last_name())
-    await form.fill_email(fake.email())
-    await form.select_gender()
+    form.goto()
+    form.hide_overlays()
+    form.fill_first_name(fake.first_name())
+    form.fill_last_name(fake.last_name())
+    form.fill_email(fake.email())
+    form.select_gender()
     # KEY DIFFERENCE: fake.numerify() replaces faker.string.numeric()
     # TS: faker.string.numeric('##########')  →  PY: fake.numerify('##########')
-    await form.fill_mobile(fake.numerify("##########"))
-    await form.set_date_of_birth("10 Oct 1990")
-    await form.fill_subjects(["Maths", "English"])
-    await form.select_hobbies()
-    await form.upload_picture(str(SAMPLE_IMAGE))
+    form.fill_mobile(fake.numerify("##########"))
+    form.set_date_of_birth("10 Oct 1990")
+    form.fill_subjects(["Maths", "English"])
+    form.select_hobbies()
+    form.upload_picture(str(SAMPLE_IMAGE))
     # KEY DIFFERENCE: fake.street_address() replaces faker.location.streetAddress()
-    await form.fill_current_address(fake.street_address())
-    await form.select_state_and_city("NCR", "Delhi")
-    await form.submit()
+    form.fill_current_address(fake.street_address())
+    form.select_state_and_city("NCR", "Delhi")
+    form.submit()
 
-    # Retry loop: wait for confirmation modal text
     found_confirmation = False
     try:
         modal = page.locator(".modal-content")
-        await modal.wait_for(state="attached", timeout=7000)
+        modal.wait_for(state="attached", timeout=7000)
         for _ in range(10):
-            text = await modal.text_content()
+            text = modal.text_content()
             if text and re.search(r"thanks for submitting the form", text, re.IGNORECASE):
                 found_confirmation = True
                 break
-            await page.wait_for_timeout(300)
+            page.wait_for_timeout(300)
     except Exception:
         found_confirmation = False
         try:
-            modal_html = await page.locator(".modal-content").inner_html()
+            modal_html = page.locator(".modal-content").inner_html()
         except Exception:
             modal_html = ""
         print(f"DEBUG: No confirmation modal. Modal HTML: {modal_html}")
 
     ctx.form_confirmation = found_confirmation
-    await context.close()
+    context.close()
 
 
 @when("user 2 shuffles the sortable grid items")
-async def user_2_shuffles_grid(browser: Browser, ctx: ScenarioContext) -> None:
+def user_2_shuffles_grid(browser: Browser, ctx: ScenarioContext) -> None:
     """
     Creates an isolated browser context for user 2.
-    Captures grid order before and after shuffle to detect change.
     """
-    context = await browser.new_context()
-    page = await context.new_page()
+    context = browser.new_context()
+    page = context.new_page()
 
     sortable = SortablePage(page)
-    await sortable.goto()
-    await sortable.go_to_grid_tab()
+    sortable.goto()
+    sortable.go_to_grid_tab()
 
-    before = await sortable.get_grid_order()
-    await sortable.shuffle_grid_items()
-    after = await sortable.get_grid_order()
+    before = sortable.get_grid_order()
+    sortable.shuffle_grid_items()
+    after = sortable.get_grid_order()
 
-    # KEY DIFFERENCE: list comparison
-    # TS: before.join(',') !== after.join(',')   — string comparison of joined arrays
-    # PY: before != after                        — direct list comparison (cleaner)
+    # KEY DIFFERENCE: direct list comparison
+    # TS: before.join(',') !== after.join(',')
+    # PY: before != after
     ctx.grid_order_changed = before != after
-    await context.close()
+    context.close()
 
 
 @when("user 1 fills the automation practice form with an invalid email")
-async def user_1_invalid_email(browser: Browser, ctx: ScenarioContext) -> None:
+def user_1_invalid_email(browser: Browser, ctx: ScenarioContext) -> None:
     """
     KEY DIFFERENCE — HTML5 validation check:
     TS: await page.$eval('#userEmail', (el: HTMLInputElement) => el.validity.valid)
-        page.$eval passes a TypeScript function — in PY it must be a JS string.
-    PY: await page.eval_on_selector('#userEmail', '(el) => el.validity.valid')
+        page.$eval passes a TypeScript function — in Python it must be a JS string.
+    PY: page.eval_on_selector('#userEmail', '(el) => el.validity.valid')
     """
-    context = await browser.new_context()
-    page = await context.new_page()
+    context = browser.new_context()
+    page = context.new_page()
 
     form = PracticeFormPage(page)
-    await form.goto()
-    await form.fill_first_name(fake.first_name())
-    await form.fill_last_name(fake.last_name())
-    await form.fill_email("invalid-email")
+    form.goto()
+    form.fill_first_name(fake.first_name())
+    form.fill_last_name(fake.last_name())
+    form.fill_email("invalid-email")
 
-    # KEY DIFFERENCE: eval_on_selector replaces page.$eval
-    is_valid = await page.eval_on_selector("#userEmail", "(el) => el.validity.valid")
+    is_valid = page.eval_on_selector("#userEmail", "(el) => el.validity.valid")
 
     if not is_valid:
         try:
-            await form.submit()
-            await page.wait_for_timeout(500)
-            email_error_locator = await form.get_email_error()
-            ctx.email_error = await email_error_locator.is_visible()
+            form.submit()
+            page.wait_for_timeout(500)
+            email_error_locator = form.get_email_error()
+            ctx.email_error = email_error_locator.is_visible()
         except Exception:
-            ctx.email_error = True  # submission blocked = email validation error detected
+            ctx.email_error = True
     else:
-        ctx.email_error = False  # should not happen in this negative test
+        ctx.email_error = False
 
-    await context.close()
+    context.close()
 
 
 @then("user 1 should see the form submission confirmation")

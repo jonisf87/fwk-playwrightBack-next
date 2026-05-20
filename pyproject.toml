@@ -120,10 +120,10 @@ strict = true
 # TypeScript playwright.config.ts set: testDir, headless, screenshot, video, baseURL, reporter
 # Python splits these: pytest options here, browser config in conftest.py fixtures
 [tool.pytest.ini_options]
-# KEY DIFFERENCE: asyncio_mode = "auto" means every "async def test_*" function
-# is automatically treated as an asyncio coroutine — no @pytest.mark.asyncio needed per test.
-# TypeScript's Playwright runner handled this transparently via its own event loop.
-asyncio_mode = "auto"
+# KEY DIFFERENCE: This branch uses playwright.sync_api — no asyncio_mode needed.
+# asyncio_mode = "auto" is required in the native branch (feature/native-playwright)
+# where test functions are async def and pytest-asyncio manages the event loop.
+# Here all Playwright calls are synchronous; pytest runs step functions normally.
 # Custom markers — equivalent to Cucumber's @ui and @api tags
 # Run with: pytest -m api  or  pytest -m "not api"
 markers = [
