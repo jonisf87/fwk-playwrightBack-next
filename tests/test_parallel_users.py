@@ -15,20 +15,27 @@ KEY DIFFERENCE vs feature/native-playwright:
   Playwright reports (screenshot + trace on failure) in exchange.
 
 ISOLATED CONTEXTS PATTERN:
-  Each user task calls browser.new_context() independently. This is the same
-  pattern as TypeScript's browser.newContext(). The contexts share the same
-  browser process but have completely separate session state.
+  Each user task calls new_context() (the pytest-playwright fixture callable)
+  instead of browser.new_context(). This is critical for two reasons:
+    1. base_url is injected via browser_context_args — relative URLs like
+       "/automation-practice-form" resolve correctly without hardcoding the host.
+    2. pytest-playwright wraps context.close() — when called it automatically
+       saves screenshot + trace to a temp dir before actually closing. After the
+       test, did_finish_test() moves them to test-results/ if the test failed.
+
+  Using browser.new_context() directly would bypass both behaviours.
 
   TS: const context = await this.browser.newContext()
-  PY:       context =       browser.new_context()      (sync, no await)
+  PY:       context =       new_context()               (via pytest-playwright fixture)
 """
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from faker import Faker
-from playwright.sync_api import Browser
+from playwright.sync_api import BrowserContext
 
 from tests.pages.practice_form_page import PracticeFormPage
 from tests.pages.sortable_page import SortablePage
@@ -36,10 +43,14 @@ from tests.pages.sortable_page import SortablePage
 fake = Faker()
 SAMPLE_IMAGE = Path(__file__).parent / "fixtures" / "test-image.png"
 
+# Type alias for the new_context callable provided by pytest-playwright.
+# Equivalent to: (kwargs) -> BrowserContext
+NewContextCallable = Callable[..., BrowserContext]
 
-def _user1_form_task(browser: Browser) -> bool:
+
+def _user1_form_task(new_context: NewContextCallable) -> bool:
     """User 1: fill and submit the automation practice form in an isolated context."""
-    context = browser.new_context()
+    context = new_context()
     page = context.new_page()
     try:
         form = PracticeFormPage(page)
@@ -75,9 +86,9 @@ def _user1_form_task(browser: Browser) -> bool:
         context.close()
 
 
-def _user2_grid_task(browser: Browser) -> bool:
+def _user2_grid_task(new_context: NewContextCallable) -> bool:
     """User 2: navigate to sortable, switch to grid tab, shuffle items."""
-    context = browser.new_context()
+    context = new_context()
     page = context.new_page()
     try:
         sortable = SortablePage(page)
@@ -91,8 +102,8 @@ def _user2_grid_task(browser: Browser) -> bool:
         context.close()
 
 
-def _user1_invalid_email_task(browser: Browser) -> bool:
-    context = browser.new_context()
+def _user1_invalid_email_task(new_context: NewContextCallable) -> bool:
+    context = new_context()
     page = context.new_page()
     try:
         form = PracticeFormPage(page)
@@ -107,7 +118,7 @@ def _user1_invalid_email_task(browser: Browser) -> bool:
 
 
 @pytest.mark.ui
-def test_two_users_sequential(browser: Browser) -> None:
+def test_two_users_sequential(new_context: NewContextCallable) -> None:
     """
     Two users interact with different pages using isolated BrowserContext objects.
     Runs sequentially (user 1 completes, then user 2 starts).
@@ -115,13 +126,13 @@ def test_two_users_sequential(browser: Browser) -> None:
     For true concurrent execution see feature/native-playwright which uses:
       asyncio.gather(_user1_form_task(browser), _user2_grid_task(browser))
     """
-    form_submitted = _user1_form_task(browser)
-    grid_changed = _user2_grid_task(browser)
+    form_submitted = _user1_form_task(new_context)
+    grid_changed = _user2_grid_task(new_context)
     assert form_submitted, "User 1 did not see form submission confirmation"
     assert grid_changed, "User 2 did not see grid items reordered after shuffle"
 
 
 @pytest.mark.ui
-def test_invalid_email_validation(browser: Browser) -> None:
-    email_error_shown = _user1_invalid_email_task(browser)
+def test_invalid_email_validation(new_context: NewContextCallable) -> None:
+    email_error_shown = _user1_invalid_email_task(new_context)
     assert email_error_shown, "HTML5 email validation did not fire for 'invalid-email'"
