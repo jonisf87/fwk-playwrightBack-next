@@ -35,7 +35,12 @@ class PracticeFormPage:
         self.page = page
 
     async def goto(self) -> None:
-        await self.page.goto("https://demoqa.com/automation-practice-form")
+        # wait_until="domcontentloaded" instead of the default "load" so we don't
+        # wait for every ad/analytics script — much faster in CI, especially Firefox.
+        await self.page.goto(
+            "https://demoqa.com/automation-practice-form",
+            wait_until="domcontentloaded",
+        )
 
     async def hide_overlays(self) -> None:
         """
@@ -85,10 +90,17 @@ class PracticeFormPage:
         await self.page.fill(self.CURRENT_ADDRESS, address)
 
     async def select_state_and_city(self, state: str, city: str) -> None:
+        # Re-hide overlays: new ad iframes may have loaded since hide_overlays() ran.
+        await self.page.evaluate(
+            """() => {
+                document.querySelectorAll('#fixedban, #adplus-anchor, .modal, .modal-backdrop, iframe')
+                    .forEach(el => { el.style.display = 'none'; });
+            }"""
+        )
         await self.page.locator(self.STATE_SELECT).scroll_into_view_if_needed()
-        await self.page.locator(self.STATE_SELECT).click()
+        await self.page.locator(self.STATE_SELECT).click(force=True)
         await self.page.get_by_text(state, exact=True).click()
-        await self.page.locator(self.CITY_SELECT).click()
+        await self.page.locator(self.CITY_SELECT).click(force=True)
         await self.page.get_by_text(city, exact=True).click()
 
     async def submit(self) -> None:
