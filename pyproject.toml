@@ -1,0 +1,117 @@
+# KEY DIFFERENCE: Python uses a single pyproject.toml (PEP 518/621) where TypeScript
+# splits config across package.json, tsconfig.json, and eslint.config.mjs.
+# All tools (ruff, mypy, pytest, taskipy) read from this one file.
+
+[project]
+name = "fwk-playwright-back-next"
+version = "1.0.0"
+description = "E2E Playwright + Python + pytest — BDD/POM and native approaches for demoqa.com"
+requires-python = ">=3.11"
+
+# KEY DIFFERENCE: TypeScript separates dependencies (package.json "dependencies")
+# from devDependencies. Python projects used for testing are entirely dev-facing,
+# so everything goes under optional-dependencies["dev"].
+# Install with: pip install -e ".[dev]"
+[project.optional-dependencies]
+dev = [
+    # Browser automation — same API surface as TypeScript Playwright
+    "playwright>=1.44.0",
+    # Test runner — replaces Cucumber.js as the execution engine
+    "pytest>=8.0.0",
+    # Async test support — required because playwright-python uses asyncio
+    "pytest-asyncio>=0.23.0",
+    # BDD/Gherkin layer — replaces @cucumber/cucumber (branch feature/bdd-pom only)
+    "pytest-bdd>=7.0.0",
+    # Test data generation — replaces @faker-js/faker
+    "Faker>=25.0.0",
+    # Linter + formatter — replaces ESLint AND Prettier in a single Rust binary
+    "ruff>=0.5.0",
+    # Static type checker — replaces tsc --noEmit
+    "mypy>=1.10.0",
+    # Task runner — replaces npm scripts ("task lint" instead of "npm run lint")
+    "taskipy>=1.13.0",
+    # Local git hooks — no direct TS equivalent (was CI-only in the original project)
+    "pre-commit>=3.7.0",
+    # HTML test reports — replaces Cucumber's --format html reporter
+    "pytest-html>=4.0.0",
+]
+
+# KEY DIFFERENCE: taskipy replaces npm scripts.
+# TypeScript: "scripts": { "lint": "eslint .", "test": "cucumber-js ..." }
+# Python:     [tool.taskipy.tasks] lint = "ruff check ."
+# Usage: task <name>  (instead of: npm run <name>)
+[tool.taskipy.tasks]
+generate-data = "python tests/support/generate_data.py"
+lint          = "ruff check ."
+format-check  = "ruff format --check ."
+format        = "ruff format ."
+typecheck     = "mypy tests"
+test-ui       = "pytest tests/ -m 'not api' -v"
+test-api      = "pytest tests/ -m api -v"
+test          = "pytest tests/ -v"
+codegen       = "playwright codegen https://demoqa.com/register"
+
+# KEY DIFFERENCE: ruff replaces both ESLint and Prettier.
+# TypeScript used two separate tools with two separate configs.
+# ruff handles linting (ruff check) and formatting (ruff format) from one config.
+# It is 10-100x faster than ESLint because it is written in Rust.
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Rule sets selected (equivalents to ESLint rule packs):
+#   E/W = pycodestyle errors/warnings  (equiv: eslint:recommended)
+#   F   = pyflakes (unused imports, undefined names)
+#   I   = isort (import ordering)      (equiv: eslint-plugin-import)
+#   N   = pep8-naming conventions
+#   UP  = pyupgrade (modern Python syntax)
+select = ["E", "F", "I", "N", "UP", "W"]
+ignore = [
+    "E501",  # line too long — handled by formatter, not linter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Relax naming rules in step definitions — BDD step strings use natural language
+"tests/steps/**" = ["N802", "N803"]
+# Test files: allow assert statements and magic method usage
+"tests/test_*.py" = ["N802"]
+
+# KEY DIFFERENCE: mypy replaces tsc --noEmit.
+# TypeScript: "strict": true in tsconfig.json
+# Python:     strict = true in [tool.mypy]
+# Both enforce: no implicit any/unknown, exhaustive null checks, strict function types.
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true  # third-party stubs not always available
+# Exclude step definitions — pytest-bdd uses dynamic fixture injection that
+# confuses mypy's strict mode (parameters appear "unused" to static analysis)
+exclude = ["tests/steps/", "tests/test_"]
+
+[[tool.mypy.overrides]]
+# Page objects and support code: full strict checking
+module = ["tests.pages.*", "tests.support.*"]
+strict = true
+
+# Central pytest configuration — partially replaces playwright.config.ts
+# TypeScript playwright.config.ts set: testDir, headless, screenshot, video, baseURL, reporter
+# Python splits these: pytest options here, browser config in conftest.py fixtures
+[tool.pytest.ini_options]
+# KEY DIFFERENCE: asyncio_mode = "auto" means every "async def test_*" function
+# is automatically treated as an asyncio coroutine — no @pytest.mark.asyncio needed per test.
+# TypeScript's Playwright runner handled this transparently via its own event loop.
+asyncio_mode = "auto"
+# Custom markers — equivalent to Cucumber's @ui and @api tags
+# Run with: pytest -m api  or  pytest -m "not api"
+markers = [
+    "api: API-only tests, no browser required",
+    "ui: UI tests requiring a browser context",
+]
+# Test discovery — equivalent to testDir in playwright.config.ts
+testpaths = ["tests"]
+# Suppress known third-party warnings that clutter output
+filterwarnings = [
+    "ignore::DeprecationWarning:pytest_bdd",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
