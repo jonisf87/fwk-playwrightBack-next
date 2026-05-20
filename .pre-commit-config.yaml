@@ -41,8 +41,9 @@ repos:
         args:
           - --ignore-missing-imports
           - --config-file=pyproject.toml
-        # Only run on Python files inside tests/ — pass_filenames=false lets mypy
-        # use its own file discovery (configured via [tool.mypy] in pyproject.toml)
+          - tests  # explicit target — mypy uses its own discovery from here
+        # pass_filenames=false: mypy resolves imports better when given a directory
+        # than individual files, avoiding "Module not found" false positives.
         pass_filenames: false
 
   # conventional-pre-commit: enforces conventional commit message format
