@@ -85,9 +85,13 @@ ignore = [
 python_version = "3.11"
 strict = true
 ignore_missing_imports = true  # third-party stubs not always available
-# Exclude step definitions — pytest-bdd uses dynamic fixture injection that
-# confuses mypy's strict mode (parameters appear "unused" to static analysis)
-exclude = ["tests/steps/", "tests/test_"]
+# Exclude test infrastructure files where @pytest.fixture / dynamic injection
+# makes mypy strict mode raise false positives:
+#   tests/conftest  — @pytest.fixture has no complete ParamSpec stubs in typeshed;
+#                     known mypy+pytest limitation, not a code quality issue.
+#   tests/steps/    — pytest-bdd injects fixtures dynamically; params look "unused".
+#   tests/test_     — native test files use the same dynamic injection pattern.
+exclude = ["tests/conftest", "tests/steps/", "tests/test_"]
 
 [[tool.mypy.overrides]]
 # Page objects and support code: full strict checking
