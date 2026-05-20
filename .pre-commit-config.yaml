@@ -1,0 +1,74 @@
+# Pre-commit hooks configuration
+# KEY DIFFERENCE from TypeScript project: the original project only ran lint/typecheck in CI.
+# Here we run the same checks locally on every git commit, blocking bad commits before they
+# ever reach the remote — shifting quality left.
+#
+# Setup (run once after cloning):
+#   pip install pre-commit
+#   pre-commit install                           # installs commit-stage hooks
+#   pre-commit install --hook-type commit-msg   # installs commit-msg hook (conventional commits)
+#
+# Manual run on all files:
+#   pre-commit run --all-files
+
+repos:
+  # ruff: replaces ESLint (ruff check) AND Prettier (ruff format)
+  # TypeScript equivalent: "eslint . --ext .ts --max-warnings=0" + "prettier --check ."
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.13
+    hooks:
+      - id: ruff
+        name: ruff lint
+        args: [--fix]
+      - id: ruff-format
+        name: ruff format
+
+  # mypy: replaces tsc --noEmit
+  # TypeScript equivalent: "tsc --noEmit" in tsconfig.json with "strict": true
+  # Only checks pages/ and support/ — step definitions use dynamic pytest-bdd injection
+  # that mypy cannot statically resolve, so they are excluded via pyproject.toml config.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.1.0
+    hooks:
+      - id: mypy
+        name: mypy type check
+        additional_dependencies:
+          - "playwright>=1.44.0"
+          - "Faker>=25.0.0"
+          - "pytest>=8.0.0"
+          - "pytest-asyncio>=0.23.0"
+          - "pytest-bdd>=7.0.0"
+        args:
+          - --ignore-missing-imports
+          - --config-file=pyproject.toml
+        # Only run on Python files inside tests/ — pass_filenames=false lets mypy
+        # use its own file discovery (configured via [tool.mypy] in pyproject.toml)
+        pass_filenames: false
+
+  # conventional-pre-commit: enforces conventional commit message format
+  # No TypeScript equivalent — this is a bonus quality gate added in the Python refactor.
+  # Allowed types: feat, fix, chore, ci, docs, test, style, refactor, perf, build
+  # Examples of VALID messages:
+  #   feat: add login page object
+  #   fix: handle captcha timeout in registration
+  #   chore: update ruff to v0.9.0
+  # Examples of INVALID messages (will be blocked):
+  #   "added login page"       ← no type prefix
+  #   "WIP"                    ← no type prefix
+  #   "FEAT: something"        ← wrong case
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - chore
+          - ci
+          - docs
+          - test
+          - style
+          - refactor
+          - perf
+          - build
