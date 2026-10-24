@@ -14,16 +14,16 @@ on:
   push:
     branches: [feature/native-playwright-reports]
   pull_request:
-    branches: [main]
+    branches: [feature/native-playwright-reports, main]
 
 jobs:
   lint:
     name: Lint & type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -50,9 +50,9 @@ jobs:
         browser: [chromium, firefox]
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -72,7 +72,7 @@ jobs:
         # The BROWSER env var approach in native-playwright required custom conftest logic.
         run: pytest tests/ -m "not api" -v --browser ${{ matrix.browser }}
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: test-results-${{ matrix.browser }}
@@ -86,9 +86,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.11"
           cache: pip

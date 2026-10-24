@@ -1,5 +1,10 @@
 # Playwright Python Framework (native-playwright-reports branch)
 
+[![Native Playwright Reports CI](https://github.com/jonisf87/fwk-playwrightBack-next/actions/workflows/native-playwright-reports.yml/badge.svg?branch=feature%2Fnative-playwright-reports)](https://github.com/jonisf87/fwk-playwrightBack-next/actions/workflows/native-playwright-reports.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Playwright](https://img.shields.io/badge/playwright-1.64-green)
+![pytest-playwright](https://img.shields.io/badge/pytest--playwright-0.10-green)
+
 End-to-end testing framework for [demoqa.com](https://demoqa.com) built with Python, pytest-playwright, and pytest. This branch demonstrates the **pytest-playwright approach**: tests written as plain `def test_*` functions (sync, no `await`) with pytest-playwright providing the full browser lifecycle and native artifact capture.
 
 If you come from TypeScript, think of this branch as the Python equivalent of `@playwright/test` with `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` enabled. You get screenshots and traces for free on failure — no extra code.
@@ -99,7 +104,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-playwright install chromium
+playwright install --with-deps chromium
 
 python tests/support/generate_data.py
 ```
@@ -158,6 +163,12 @@ pytest-playwright uses `--browser chromium` (or `firefox`, `webkit`) as a CLI fl
 
 **Sync vs async API**
 This branch imports from `playwright.sync_api`. The `feature/native-playwright` branch imports from `playwright.async_api`. Both expose the same methods but the sync version blocks the thread; the async version returns coroutines that must be awaited. pytest-playwright works exclusively with `sync_api`.
+
+---
+
+## Stack versions
+
+playwright 1.64 · pytest 9.1 · pytest-playwright 0.10 · Faker 40 · ruff 0.17 · mypy 2.4 · taskipy 1.14 · pre-commit 4.7 (see `pyproject.toml`).
 
 ---
 
