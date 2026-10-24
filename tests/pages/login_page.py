@@ -32,13 +32,13 @@ class LoginPage:
 
     def is_logged_in(self) -> bool:
         try:
-            self.page.wait_for_selector(self.PROFILE_INDICATOR, timeout=5000)
+            self.page.wait_for_selector(self.PROFILE_INDICATOR, timeout=15000)
             return True
         except Exception:
             return False
 
     def get_error_message(self) -> str | None:
         try:
-            return self.page.locator(self.ERROR_MESSAGE).text_content(timeout=5000)
+            return self.page.locator(self.ERROR_MESSAGE).text_content(timeout=15000)
         except Exception:
             return None

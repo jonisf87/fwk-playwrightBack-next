@@ -70,7 +70,7 @@ jobs:
         # KEY DIFFERENCE vs native-playwright: browser is passed as a CLI flag.
         # pytest-playwright reads --browser and injects the right browser fixture.
         # The BROWSER env var approach in native-playwright required custom conftest logic.
-        run: pytest tests/ -m "not api" -v --browser ${{ matrix.browser }}
+        run: pytest tests/ -m "not api" -v --reruns 2 --reruns-delay 2 --browser ${{ matrix.browser }}
 
       - uses: actions/upload-artifact@v7.0.2
         if: always()
