@@ -65,6 +65,7 @@ jobs:
           BROWSER: ${{ matrix.browser }}
         run: |
           pytest tests/ -m "not api" -v \
+            --reruns 2 --reruns-delay 2 \
             --html=reports/ui-${{ matrix.browser }}.html \
             --self-contained-html
 

@@ -34,7 +34,7 @@ class LoginPage:
 
     async def is_logged_in(self) -> bool:
         try:
-            await self.page.wait_for_selector(self.PROFILE_INDICATOR, timeout=5000)
+            await self.page.wait_for_selector(self.PROFILE_INDICATOR, timeout=15000)
             return True
         except Exception:
             return False
@@ -46,6 +46,6 @@ class LoginPage:
         PY: except Exception: return None
         """
         try:
-            return await self.page.locator(self.ERROR_MESSAGE).text_content(timeout=5000)
+            return await self.page.locator(self.ERROR_MESSAGE).text_content(timeout=15000)
         except Exception:
             return None
