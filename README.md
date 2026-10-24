@@ -1,5 +1,10 @@
 # Playwright Python Framework (feature/bdd-pom branch)
 
+[![BDD POM — CI](https://github.com/jonisf87/fwk-playwrightBack-next/actions/workflows/bdd-pom.yml/badge.svg?branch=feature%2Fbdd-pom)](https://github.com/jonisf87/fwk-playwrightBack-next/actions/workflows/bdd-pom.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Playwright](https://img.shields.io/badge/playwright-1.64-green)
+![pytest-bdd](https://img.shields.io/badge/pytest--bdd-9.0-green)
+
 End-to-end testing framework for [demoqa.com](https://demoqa.com) built with Python, Playwright, and pytest. This branch demonstrates the **BDD approach**: scenarios written in plain English using Gherkin syntax, with Python step definitions underneath, and Page Objects handling the browser interaction.
 
 If you come from TypeScript, think of this branch as the Python equivalent of Cucumber.js + POM. The other branch (`feature/native-playwright`) is the equivalent of writing tests directly with `@playwright/test`.
@@ -87,7 +92,7 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
 # Install Playwright browsers (equivalent to npx playwright install)
-playwright install chromium
+playwright install --with-deps chromium
 
 # Generate test credentials (creates tests/support/data.json)
 python tests/support/generate_data.py
@@ -142,8 +147,8 @@ The code before `yield` is the setup (equivalent to a `Before` hook). The code a
 @pytest.fixture
 def browser(playwright_instance, browser_name):
     b = playwright_instance.chromium.launch(headless=True)
-    yield b          # test runs here
-    b.close()        # teardown runs after the test
+    yield b  # test runs here
+    b.close()  # teardown runs after the test
 ```
 
 **`target_fixture` turns a `@given` step into a named fixture**
@@ -152,11 +157,11 @@ When a step needs to return a value for later steps to use, add `target_fixture=
 ```python
 @given("I navigate to the login page", target_fixture="login_page")
 def navigate(page: Page) -> LoginPage:
-    return LoginPage(page)   # now 'login_page' is available to all following steps
+    return LoginPage(page)  # now 'login_page' is available to all following steps
 ```
 
 **Why Background steps live in `conftest.py`**
-pytest-bdd v7 registers step definitions in a global dictionary when the `@given/@when/@then` decorators run (at import time). Files are collected alphabetically: `login_steps.py` is imported before `registration_steps.py`. When `login_steps.py` calls `scenarios("login.feature")`, the Background steps defined in `registration_steps.py` are not yet registered, causing a `StepDefinitionNotFoundError`. Putting those steps in `conftest.py` guarantees they are registered before any `*_steps.py` file is imported.
+Steps shared by several feature files (the Background steps) are defined in `conftest.py`. pytest-bdd resolves steps through pytest fixtures, so anything defined in `conftest.py` is visible to every `*_steps.py` module, whereas a step defined inside one `*_steps.py` file is only visible to the tests of that module.
 
 **`response.status` is a property, not a method**
 The most common mistake when porting from TypeScript: in TS you write `response.status()` (method call), in Python it is `response.status` (integer property). Writing `response.status()` in Python returns a bound method object, which is always truthy, so assertions never fail even on 404 or 500 responses.
@@ -166,6 +171,12 @@ In TypeScript, `frame.url()` is a method call. In Python, `frame.url` is a prope
 
 **`page.evaluate("() => { ... }")` receives a JS string**
 In TypeScript you can pass a real arrow function. In Python the argument must be a string containing JavaScript source code. `page.evaluate(lambda: ...)` does not work.
+
+---
+
+## Stack versions
+
+playwright 1.64 · pytest 9.1 · pytest-bdd 9.0 · pytest-asyncio 1.4 · pytest-html 4.2 · Faker 40 · ruff 0.17 · mypy 2.4 · taskipy 1.14 · pre-commit 4.7 (see `pyproject.toml`).
 
 ---
 
