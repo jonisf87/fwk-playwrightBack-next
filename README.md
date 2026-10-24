@@ -1,5 +1,10 @@
 # Playwright Python Framework (native-playwright branch)
 
+[![Native Playwright CI](https://github.com/jonisf87/fwk-playwrightBack-next/actions/workflows/native-playwright.yml/badge.svg?branch=feature%2Fnative-playwright)](https://github.com/jonisf87/fwk-playwrightBack-next/actions/workflows/native-playwright.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Playwright](https://img.shields.io/badge/playwright-1.64-green)
+![pytest-asyncio](https://img.shields.io/badge/pytest--asyncio-1.4-green)
+
 End-to-end testing framework for [demoqa.com](https://demoqa.com) built with Python, Playwright, and pytest. This branch demonstrates the **native approach**: tests written as plain `async def test_*` functions with no Gherkin/BDD layer on top.
 
 If you come from TypeScript, think of this branch as the Python equivalent of writing tests directly with `@playwright/test`. The other branch (`feature/bdd-pom`) is the Cucumber.js equivalent.
@@ -60,7 +65,7 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
 # Install Playwright browsers (equivalent to npx playwright install)
-playwright install chromium
+playwright install --with-deps chromium
 
 # Generate test credentials (creates tests/support/data.json)
 python tests/support/generate_data.py
@@ -122,6 +127,12 @@ In TypeScript you can pass a real lambda function. In Python the argument must b
 
 **`asyncio.gather()` vs `Promise.all()`**
 Both schedule all coroutines (or promises) to start at the same time on a single event loop. While one task waits for a network response, the event loop advances the other. This is cooperative concurrency (single thread, multiple coroutines), not multi-threading.
+
+---
+
+## Stack versions
+
+playwright 1.64 · pytest 9.1 · pytest-asyncio 1.4 · pytest-html 4.2 · Faker 40 · ruff 0.17 · mypy 2.4 · taskipy 1.14 · pre-commit 4.7 (see `pyproject.toml`).
 
 ---
 

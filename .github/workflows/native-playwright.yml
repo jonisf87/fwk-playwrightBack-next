@@ -11,16 +11,16 @@ on:
   push:
     branches: [feature/native-playwright]
   pull_request:
-    branches: [main]
+    branches: [feature/native-playwright, main]
 
 jobs:
   lint:
     name: Lint & type-check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -47,9 +47,9 @@ jobs:
         browser: [chromium, firefox]
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -68,7 +68,7 @@ jobs:
             --html=reports/ui-${{ matrix.browser }}.html \
             --self-contained-html
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: ui-report-${{ matrix.browser }}
@@ -80,9 +80,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -99,7 +99,7 @@ jobs:
             --html=reports/api.html \
             --self-contained-html
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: api-report
