@@ -15,7 +15,7 @@ repos:
   # ruff: replaces ESLint (ruff check) AND Prettier (ruff format)
   # TypeScript equivalent: "eslint . --ext .ts --max-warnings=0" + "prettier --check ."
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.13
+    rev: v0.17.2
     hooks:
       - id: ruff
         name: ruff lint
@@ -28,16 +28,15 @@ repos:
   # Only checks pages/ and support/ — step definitions use dynamic pytest-bdd injection
   # that mypy cannot statically resolve, so they are excluded via pyproject.toml config.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
+    rev: v2.4.0
     hooks:
       - id: mypy
         name: mypy type check
         additional_dependencies:
-          - "playwright>=1.44.0"
-          - "Faker>=25.0.0"
-          - "pytest>=8.0.0"
-          - "pytest-asyncio>=0.23.0"
-          - "pytest-bdd>=7.0.0"
+          - "playwright>=1.64.0"
+          - "Faker>=40.0.0"
+          - "pytest>=9.1.0"
+          - "pytest-asyncio>=1.4.0"
         args:
           - --ignore-missing-imports
           - --config-file=pyproject.toml
