@@ -15,24 +15,24 @@ requires-python = ">=3.11"
 [project.optional-dependencies]
 dev = [
     # Browser automation — same API surface as TypeScript Playwright
-    "playwright>=1.44.0",
+    "playwright>=1.64.0",
     # Test runner — replaces Cucumber.js as the execution engine
-    "pytest>=8.0.0",
+    "pytest>=9.1.0",
     # pytest-playwright provides page/browser/context fixtures + screenshot/trace capture.
     # KEY DIFFERENCE vs feature/native-playwright: that branch manages the full Playwright
     # lifecycle manually (async_playwright, Browser, BrowserContext, Page as async fixtures).
     # This branch delegates all of that to pytest-playwright — zero lifecycle boilerplate.
-    "pytest-playwright>=0.5.0",
+    "pytest-playwright>=0.10.0",
     # Test data generation — replaces @faker-js/faker
-    "Faker>=25.0.0",
+    "Faker>=40.0.0",
     # Linter + formatter — replaces ESLint AND Prettier in a single Rust binary
-    "ruff>=0.5.0",
+    "ruff>=0.17.0",
     # Static type checker — replaces tsc --noEmit
-    "mypy>=1.10.0",
+    "mypy>=2.4.0",
     # Task runner — replaces npm scripts ("task lint" instead of "npm run lint")
-    "taskipy>=1.13.0",
+    "taskipy>=1.14.0",
     # Local git hooks — no direct TS equivalent (was CI-only in the original project)
-    "pre-commit>=3.7.0",
+    "pre-commit>=4.7.0",
 ]
 
 # KEY DIFFERENCE: taskipy replaces npm scripts.
