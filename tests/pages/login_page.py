@@ -73,7 +73,7 @@ class LoginPage:
         ]
         for selector in selectors:
             try:
-                self.page.wait_for_selector(selector, state="visible", timeout=3000)
+                self.page.wait_for_selector(selector, state="visible", timeout=10000)
                 text = self.page.text_content(selector)
                 if text and text.strip():
                     return text.strip()

@@ -25,6 +25,9 @@ dev = [
     "playwright>=1.64.0",
     # Test runner — replaces Cucumber.js as the execution engine
     "pytest>=9.1.0",
+    # Retries for demoqa.com flakiness (login/profile render is slow and intermittent on
+    # shared CI runners). Used only via --reruns in the CI UI step; local runs stay strict.
+    "pytest-rerunfailures>=16.0",
     # Async test support. This branch uses playwright.sync_api, so no asyncio_mode is set;
     # the dependency stays for the shared tooling. Former pin <1.0 lifted (Oct 2026):
     # verified with pytest-asyncio 1.4 + pytest-bdd 9 that all scenarios collect and
