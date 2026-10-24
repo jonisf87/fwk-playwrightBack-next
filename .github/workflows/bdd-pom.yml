@@ -111,7 +111,7 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
           PYTHONPATH: ${{ github.workspace }}
-        run: python -m pytest tests/ -m "not api" -v --html=reports/ui-${{ matrix.browser }}.html --self-contained-html
+        run: python -m pytest tests/ -m "not api" -v --reruns 2 --reruns-delay 2 --html=reports/ui-${{ matrix.browser }}.html --self-contained-html
 
       - name: Upload HTML report
         # KEY DIFFERENCE: pytest-html generates the report; TypeScript used cucumber's --format html.

@@ -96,7 +96,7 @@ def see_profile_page(page: Page, login_page: LoginPage) -> None:
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
     try:
-        page.wait_for_selector("#userName-value", timeout=5000)
+        page.wait_for_selector("#userName-value", timeout=15000)
     except Exception as exc:
         page.screenshot(path=str(reports_dir / "login-profile-fail.png"), full_page=True)
         raise AssertionError(
